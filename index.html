@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek-R1 量子对话系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        :root {
+            --primary-color: #00f7ff;
+            --secondary-color: #7b2dff;
+            --bg-color: #0a0a1a;
+            --panel-color: rgba(15, 15, 35, 0.8);
+            --text-color: #e0e0ff;
+            --user-bubble: #3a3aff;
+            --ai-bubble: #1a1a3a;
+            --error-color: #ff3a5c;
+            --thinking-color: #aaaaaa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Arial', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(123, 45, 255, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(0, 247, 255, 0.1) 0%, transparent 20%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0;
+            position: relative;
+        }
+
+        h1 {
+            font-size: clamp(1.5rem, 4vw, 2.5rem);
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(0, 247, 255, 0.3);
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 20px;
+        }
+
+        .chat-container {
+            flex: 1;
+            background-color: var(--panel-color);
+            border-radius: 15px;
+            border: 1px solid rgba(0, 247, 255, 0.2);
+            box-shadow: 0 0 20px rgba(0, 247, 255, 0.1);
+            padding: 20px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            max-width: 80%;
+            margin-bottom: 15px;
+            padding: 12px 18px;
+            border-radius: 18px;
+            line-height: 1.5;
+            position: relative;
+            animation: fadeIn 0.3s ease-out;
+            word-wrap: break-word;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            align-self: flex-end;
+            background-color: var(--user-bubble);
+            color: white;
+            border-bottom-right-radius: 5px;
+            box-shadow: 0 0 15px rgba(58, 58, 255, 0.3);
+        }
+
+        .ai-message {
+            align-self: flex-start;
+            background-color: var(--ai-bubble);
+            border: 1px solid rgba(0, 247, 255, 0.3);
+            border-bottom-left-radius: 5px;
+            box-shadow: 0 0 15px rgba(0, 247, 255, 0.1);
+        }
+
+        .error-message {
+            align-self: flex-start;
+            background-color: rgba(255, 58, 92, 0.2);
+            border: 1px solid var(--error-color);
+            color: var(--error-color);
+        }
+
+        .thinking-text {
+            color: var(--thinking-color);
+            font-style: italic;
+            opacity: 0.7;
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            background-color: var(--panel-color);
+            border-radius: 25px;
+            padding: 10px;
+            border: 1px solid rgba(0, 247, 255, 0.2);
+            box-shadow: 0 0 15px rgba(0, 247, 255, 0.1);
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 20px;
+            background-color: rgba(10, 10, 30, 0.8);
+            color: var(--text-color);
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        #message-input:focus {
+            box-shadow: 0 0 0 2px var(--primary-color);
+        }
+
+        #send-button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: black;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 247, 255, 0.4);
+        }
+
+        #send-button:active {
+            transform: translateY(0);
+        }
+
+        #send-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            background-color: var(--ai-bubble);
+            padding: 12px 18px;
+            border-radius: 18px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(0, 247, 255, 0.3);
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 5px;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--primary-color);
+            border-radius: 50%;
+            animation: typingAnimation 1.4s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(1) {
+            animation-delay: 0s;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typingAnimation {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-5px); }
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-top: 10px;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .chat-container {
+                padding: 15px;
+            }
+            
+            .message {
+                max-width: 90%;
+                padding: 10px 15px;
+            }
+            
+            #send-button {
+                padding: 12px 20px;
+            }
+        }
+
+        /* 科幻UI元素 */
+        .sci-fi-element {
+            position: fixed;
+            opacity: 0.1;
+            z-index: -1;
+        }
+
+        .sci-fi-circle {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            border: 2px dashed var(--primary-color);
+            animation: rotate 30s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* 连接状态指示器 */
+        .connection-status {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.8rem;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #00ff00;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.disconnected {
+            background-color: #ff0000;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        /* 会话ID显示 */
+        .session-info {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            font-size: 0.7rem;
+            opacity: 0.5;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        .session-info:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- 科幻背景元素 -->
+    <div class="sci-fi-element" style="top: 10%; left: 5%;">
+        <div class="sci-fi-circle"></div>
+    </div>
+    <div class="sci-fi-element" style="bottom: 10%; right: 5%;">
+        <div class="sci-fi-circle" style="animation-direction: reverse;"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>DeepSeek-R1 量子对话系统</h1>
+            <div class="subtitle">v1.5B 神经网络接口 | 量子加密通道已建立</div>
+        </header>
+
+        <div class="chat-container" id="chat-container">
+            <div class="ai-message message">
+                量子通讯链路已建立。我是DeepSeek-R1 AI，随时为您服务。
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typing-indicator">
+            <div class="typing-dots">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="输入量子讯息..." autocomplete="off">
+            <button id="send-button">发送</button>
+        </div>
+
+        <div class="status-bar">
+            <div>系统状态: <span id="system-status">在线</span></div>
+            <div>量子通道: <span id="connection-status">稳定</span></div>
+        </div>
+    </div>
+
+    <div class="connection-status">
+        <div class="status-indicator" id="connection-indicator"></div>
+        <span>服务器连接</span>
+    </div>
+
+    <div class="session-info" id="session-info" title="点击复制会话ID">
+        会话ID: <span id="session-id-display"></span>
+    </div>
+
+    <script>
+        // 获取会话ID
+        const sessionId = "{{ session_id }}";
+        document.getElementById('session-id-display').textContent = sessionId.substring(0, 8) + '...';
+        
+        // 复制会话ID功能
+        document.getElementById('session-info').addEventListener('click', () => {
+            navigator.clipboard.writeText(sessionId);
+            const originalText = document.getElementById('session-info').innerHTML;
+            document.getElementById('session-info').innerHTML = '✓ 已复制会话ID';
+            setTimeout(() => {
+                document.getElementById('session-info').innerHTML = originalText;
+            }, 2000);
+        });
+
+        // 初始化Socket.IO连接
+        const socket = io({
+            query: {
+                session_id: sessionId
+            }
+        });
+
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const systemStatus = document.getElementById('system-status');
+        const connectionStatus = document.getElementById('connection-status');
+        const connectionIndicator = document.getElementById('connection-indicator');
+
+        // 连接状态监测
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            connectionStatus.textContent = '稳定';
+            connectionIndicator.classList.remove('disconnected');
+            systemStatus.style.color = '#00ff00';
+            systemStatus.style.textShadow = '0 0 5px #00ff00';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            connectionStatus.textContent = '中断';
+            connectionIndicator.classList.add('disconnected');
+            systemStatus.style.color = '#ff0000';
+            systemStatus.style.textShadow = '0 0 5px #ff0000';
+        });
+
+        socket.on('connect_error', (error) => {
+            console.log('Connection error:', error);
+            addMessage('连接服务器失败，请刷新页面重试', false, true);
+        });
+
+        // 添加消息到聊天框
+        function addMessage(content, isUser, isError = false) {
+            // 处理思考文本
+            const parts = content.split('<think>');
+            let thinkText = '';
+            let mainText = content;
+            
+            if (parts.length > 1) {
+                thinkText = parts[1].split('</think>')[0];
+                mainText = parts[0] + (parts[1].split('</think>')[1] || '');
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            
+            if (isError) {
+                messageDiv.classList.add('error-message');
+                messageDiv.textContent = content;
+            } else if (isUser) {
+                messageDiv.classList.add('user-message');
+                messageDiv.textContent = content;
+            } else {
+                messageDiv.classList.add('ai-message');
+                
+                // 如果有思考文本，先添加浅灰色思考内容
+                if (thinkText) {
+                    const thinkDiv = document.createElement('div');
+                    thinkDiv.classList.add('thinking-text');
+                    thinkDiv.textContent = thinkText;
+                    messageDiv.appendChild(thinkDiv);
+                }
+                
+                // 添加主要回复内容
+                const mainDiv = document.createElement('div');
+                typeText(mainDiv, mainText);
+                messageDiv.appendChild(mainDiv);
+            }
+            
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 逐字输出效果
+        function typeText(element, text, speed = 20) {
+            let i = 0;
+            element.textContent = '';
+            
+            function typing() {
+                if (i < text.length) {
+                    element.textContent += text.charAt(i);
+                    i++;
+                    setTimeout(typing, speed);
+                    // 保持滚动到底部
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            }
+            
+            typing();
+        }
+
+        // 发送消息
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message) {
+                addMessage(message, true);
+                messageInput.value = '';
+                sendButton.disabled = true;
+                
+                // 显示"正在输入"指示器
+                typingIndicator.style.display = 'block';
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                socket.emit('send_message', { 
+                    message: message,
+                    session_id: sessionId
+                });
+            }
+        }
+
+        // 接收消息
+        socket.on('receive_message', (data) => {
+            typingIndicator.style.display = 'none';
+            sendButton.disabled = false;
+            addMessage(data.message, false);
+        });
+
+        // 事件监听
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // 初始焦点
+        window.onload = () => {
+            messageInput.focus();
+            
+            // 模拟系统启动效果
+            systemStatus.style.color = '#00ff00';
+            systemStatus.style.textShadow = '0 0 5px #00ff00';
+        };
+    </script>
+</body>
+</html>
